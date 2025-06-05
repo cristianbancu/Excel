@@ -1,0 +1,172 @@
+Sub ImportCSV_WithResponsabiliAndFormatting()
+
+    Dim fileNames As Variant
+    fileNames = Array("Linux Prod.csv", "Linux Test.csv", "AIX Prod&DR.csv", "AIX Test.csv", "Windows Prod.csv", "Windows Test.csv")
+
+    Dim sheetColors As Object
+    Set sheetColors = CreateObject("Scripting.Dictionary")
+    sheetColors.Add "Linux", RGB(255, 217, 102)
+    sheetColors.Add "AIX", RGB(198, 224, 180)
+    sheetColors.Add "Windows", RGB(189, 215, 238)
+
+    Dim headerColor As Long: headerColor = RGB(155, 194, 230)
+    Dim folderPath As String: folderPath = ThisWorkbook.Path
+
+    Dim allSheet As Worksheet
+    Dim allRow As Long: allRow = 2
+    Dim headerSet As Boolean: headerSet = False
+    Dim i As Integer, col As Range
+
+    ' === Citire Responsabili.xlsx ===
+    Dim dictResponsabili As Object
+    Set dictResponsabili = CreateObject("Scripting.Dictionary")
+
+    Dim wbResp As Workbook
+    If Dir(folderPath & "\Responsabili.xlsx") = "" Then
+        MsgBox "Fișierul Responsabili.xlsx nu a fost găsit!", vbCritical
+        Exit Sub
+    End If
+
+    Set wbResp = Workbooks.Open(folderPath & "\Responsabili.xlsx")
+    Dim wsResp As Worksheet
+    Set wsResp = wbResp.Sheets(1)
+
+    Dim lastRowResp As Long
+    lastRowResp = wsResp.Cells(wsResp.Rows.Count, 1).End(xlUp).Row
+
+    Dim ipValue As String, respValue As String
+    For i = 2 To lastRowResp
+        If Not IsError(wsResp.Cells(i, 2).Value) And Not IsError(wsResp.Cells(i, 3).Value) Then
+            ipValue = Trim(wsResp.Cells(i, 2).Value)
+            respValue = Trim(wsResp.Cells(i, 3).Value)
+            If ipValue <> "" And respValue <> "" Then
+                dictResponsabili(ipValue) = respValue
+            End If
+        End If
+    Next i
+    wbResp.Close False
+
+    ' === Curățare sheeturi existente ===
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    Worksheets("All Vulns").Delete
+    Worksheets("Comparare").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+
+    Set allSheet = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+    allSheet.Name = "All Vulns"
+    allSheet.Tab.Color = RGB(204, 153, 255)
+
+    ' === Începem importul fișierelor ===
+    For i = LBound(fileNames) To UBound(fileNames)
+        ' [Cod de import CSV - neschimbat]
+        ' ... [Păstrează exact codul de import așa cum l-ai oferit]
+    Next i
+
+    ' === Format All Vulns ===
+    ' [Format All Vulns - neschimbat]
+    ' ... [Păstrează exact codul de formatare All Vulns așa cum l-ai oferit]
+
+    ' === Creare sheet Comparare ===
+    Dim compareSheet As Worksheet
+    Set compareSheet = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+    compareSheet.Name = "Comparare"
+    compareSheet.Cells.Font.Name = "Calibri"
+
+    ' Ascunde grilajul și setează alb pe toată foaia
+    compareSheet.Cells.Interior.Color = RGB(255, 255, 255)
+    compareSheet.Activate
+    ActiveWindow.DisplayGridlines = False
+
+    ' Titlu mare: L2:Z6
+    With compareSheet.Range("L2:Z6")
+        .Merge
+        .Value = "Vulnerabilitati"
+        .Font.Size = 20
+        .Font.Bold = True
+        .Font.Underline = xlUnderlineStyleSingle
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
+
+    ' Helper pentru stil
+    Dim accentGreen As Long: accentGreen = RGB(198, 224, 180)
+    Dim accentGold As Long: accentGold = RGB(255, 217, 102)
+    Dim accentBlue As Long: accentBlue = RGB(189, 215, 238)
+
+    ' Subtitluri verzi
+    compareSheet.Range("B8:F8").Merge: compareSheet.Range("B8").Value = "AIX Prod&DR"
+    compareSheet.Range("B9:C9").Merge: compareSheet.Range("B9").Value = "Old"
+    compareSheet.Range("E9:F9").Merge: compareSheet.Range("E9").Value = "New"
+    compareSheet.Range("H8:L8").Merge: compareSheet.Range("H8").Value = "AIX Test"
+    compareSheet.Range("H9:I9").Merge: compareSheet.Range("H9").Value = "Old"
+    compareSheet.Range("K9:L9").Merge: compareSheet.Range("K9").Value = "New"
+    compareSheet.Range("B8:L9").Interior.Color = accentGreen
+    compareSheet.Range("B8:L9").Font.Bold = True
+    compareSheet.Range("B8:L9").Font.Size = 11
+    compareSheet.Range("B8:L9").HorizontalAlignment = xlCenter
+    compareSheet.Range("B8:L9").VerticalAlignment = xlCenter
+
+    ' Subtitluri galbene
+    compareSheet.Range("N8:R8").Merge: compareSheet.Range("N8").Value = "Linux Prod"
+    compareSheet.Range("N9:O9").Merge: compareSheet.Range("N9").Value = "Old"
+    compareSheet.Range("Q9:R9").Merge: compareSheet.Range("Q9").Value = "New"
+    compareSheet.Range("T8:X8").Merge: compareSheet.Range("T8").Value = "Linux Test"
+    compareSheet.Range("T9:U9").Merge: compareSheet.Range("T9").Value = "Old"
+    compareSheet.Range("W9:X9").Merge: compareSheet.Range("W9").Value = "New"
+    compareSheet.Range("N8:X9").Interior.Color = accentGold
+    compareSheet.Range("N8:X9").Font.Bold = True
+    compareSheet.Range("N8:X9").Font.Size = 11
+    compareSheet.Range("N8:X9").HorizontalAlignment = xlCenter
+    compareSheet.Range("N8:X9").VerticalAlignment = xlCenter
+
+    ' Subtitluri albastre
+    compareSheet.Range("Z8:AD8").Merge: compareSheet.Range("Z8").Value = "Windows Prod"
+    compareSheet.Range("Z9:AA9").Merge: compareSheet.Range("Z9").Value = "Old"
+    compareSheet.Range("AC9:AD9").Merge: compareSheet.Range("AC9").Value = "New"
+    compareSheet.Range("AF8:AJ8").Merge: compareSheet.Range("AF8").Value = "Windows Test"
+    compareSheet.Range("AF9:AG9").Merge: compareSheet.Range("AF9").Value = "Old"
+    compareSheet.Range("AI9:AJ9").Merge: compareSheet.Range("AI9").Value = "New"
+    compareSheet.Range("Z8:AJ9").Interior.Color = accentBlue
+    compareSheet.Range("Z8:AJ9").Font.Bold = True
+    compareSheet.Range("Z8:AJ9").Font.Size = 11
+    compareSheet.Range("Z8:AJ9").HorizontalAlignment = xlCenter
+    compareSheet.Range("Z8:AJ9").VerticalAlignment = xlCenter
+
+    MsgBox "Import complet cu Responsabili, Status și pregătire Comparare.", vbInformation
+End Sub
+
+Function FindColumn(ws As Worksheet, headerName As String) As Integer
+    Dim i As Integer
+    For i = 1 To ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+        If Trim(ws.Cells(1, i).Value) = headerName Then
+            FindColumn = i
+            Exit Function
+        End If
+    Next i
+    FindColumn = 0
+End Function
+
+Sub ColorSeverityColumn(ws As Worksheet, lastRow As Long)
+    On Error Resume Next
+    Dim colIndex As Integer: colIndex = 0
+    Dim i As Integer
+    For i = 1 To ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+        If Trim(ws.Cells(1, i).Value) = "Severity" Then
+            colIndex = i
+            Exit For
+        End If
+    Next i
+    If colIndex = 0 Then Exit Sub
+
+    Dim cell As Range
+    For Each cell In ws.Range(ws.Cells(2, colIndex), ws.Cells(lastRow, colIndex))
+        Select Case LCase(Trim(cell.Value))
+            Case "low": cell.Interior.Color = vbYellow
+            Case "medium": cell.Interior.Color = RGB(255, 192, 0)
+            Case "high": cell.Interior.Color = vbRed
+            Case "critical": cell.Interior.Color = RGB(192, 0, 0)
+        End Select
+    Next cell
+End Sub
