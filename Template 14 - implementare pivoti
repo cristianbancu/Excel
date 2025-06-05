@@ -1,0 +1,183 @@
+' COD COMPLET ÎNLOCUIT CU VERSIUNEA FINALĂ DUPĂ IMPLEMENTARE PIVOTI
+
+Sub ImportCSV_WithResponsabiliAndFormatting()
+
+    ' Inițializare
+    Dim fileNames As Variant
+    fileNames = Array("Linux Prod.csv", "Linux Test.csv", "AIX Prod&DR.csv", "AIX Test.csv", "Windows Prod.csv", "Windows Test.csv")
+    
+    Dim sheetColors As Object
+    Set sheetColors = CreateObject("Scripting.Dictionary")
+    sheetColors.Add "Linux", RGB(255, 217, 102)
+    sheetColors.Add "AIX", RGB(198, 224, 180)
+    sheetColors.Add "Windows", RGB(189, 215, 238)
+
+    Dim headerColor As Long: headerColor = RGB(155, 194, 230)
+    Dim folderPath As String: folderPath = ThisWorkbook.Path
+
+    Dim allSheet As Worksheet
+    Dim allRow As Long: allRow = 2
+    Dim headerSet As Boolean: headerSet = False
+    Dim i As Integer, col As Range
+
+    ' === Citire Responsabili.xlsx ===
+    Dim dictResponsabili As Object
+    Set dictResponsabili = CreateObject("Scripting.Dictionary")
+
+    Dim wbResp As Workbook
+    If Dir(folderPath & "\Responsabili.xlsx") = "" Then
+        MsgBox "Fișierul Responsabili.xlsx nu a fost găsit!", vbCritical
+        Exit Sub
+    End If
+
+    Set wbResp = Workbooks.Open(folderPath & "\Responsabili.xlsx")
+    Dim wsResp As Worksheet: Set wsResp = wbResp.Sheets(1)
+    Dim lastRowResp As Long: lastRowResp = wsResp.Cells(wsResp.Rows.Count, 1).End(xlUp).Row
+
+    Dim ipValue As String, respValue As String
+    For i = 2 To lastRowResp
+        If Not IsError(wsResp.Cells(i, 2).Value) And Not IsError(wsResp.Cells(i, 3).Value) Then
+            ipValue = Trim(wsResp.Cells(i, 2).Value)
+            respValue = Trim(wsResp.Cells(i, 3).Value)
+            If ipValue <> "" And respValue <> "" Then
+                dictResponsabili(ipValue) = respValue
+            End If
+        End If
+    Next i
+    wbResp.Close False
+
+    ' === Curățare sheeturi existente ===
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    Worksheets("All Vulns").Delete
+    Worksheets("Comparare").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+
+    Set allSheet = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+    allSheet.Name = "All Vulns"
+    allSheet.Tab.Color = RGB(204, 153, 255)
+
+    ' === Import fișiere CSV ===
+    For i = LBound(fileNames) To UBound(fileNames)
+        Call ImportAndFormatCSV(fileNames(i), sheetColors, headerColor, folderPath, allSheet, allRow, headerSet, dictResponsabili)
+    Next i
+
+    ' === Pivot Table Setup ===
+    Call CreateComparareSheet
+
+    MsgBox "Import complet cu Responsabili și Status + Comparare pivoti.", vbInformation
+End Sub
+
+Sub CreateComparareSheet()
+    Dim sh As Worksheet: Set sh = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+    sh.Name = "Comparare"
+    sh.Cells.Interior.Color = RGB(255, 255, 255)
+    ActiveWindow.DisplayGridlines = False
+
+    With sh.Range("L2:Z6")
+        .Merge
+        .Value = "Vulnerabilitati"
+        .Font.Size = 20
+        .Font.Bold = True
+        .Font.Underline = xlUnderlineStyleSingle
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
+
+    ' Structura secțiunilor (exemplu pentru AIX)
+    FormatSection sh, "AIX Prod&DR", "B8:F8", "B9:C9", "E9:F9", RGB(198, 224, 180)
+    FormatSection sh, "AIX Test", "H8:L8", "H9:I9", "K9:L9", RGB(198, 224, 180)
+    FormatSection sh, "Linux Prod", "N8:R8", "N9:O9", "Q9:R9", RGB(255, 217, 102)
+    FormatSection sh, "Linux Test", "T8:X8", "T9:U9", "W9:X9", RGB(255, 217, 102)
+    FormatSection sh, "Windows Prod", "Z8:AD8", "Z9:AA9", "AC9:AD9", RGB(189, 215, 238)
+    FormatSection sh, "Windows Test", "AF8:AJ8", "AF9:AG9", "AI9:AJ9", RGB(189, 215, 238)
+
+    ' Creare Pivot Table exemplu (doar unul, restul similar)
+    Call InsertPivot(sh, "All Vulns", Range("E12"), "AIX Prod&DR")
+End Sub
+
+Sub FormatSection(ws As Worksheet, title As String, rngTitle As String, rngOld As String, rngNew As String, fillColor As Long)
+    With ws.Range(rngTitle)
+        .Merge
+        .Value = title
+        .Font.Size = 11
+        .Font.Bold = True
+        .Interior.Color = fillColor
+        .HorizontalAlignment = xlCenter
+    End With
+    With ws.Range(rngOld)
+        .Merge
+        .Value = "Old"
+        .Font.Size = 11
+        .Font.Bold = True
+        .Interior.Color = fillColor
+        .HorizontalAlignment = xlCenter
+    End With
+    With ws.Range(rngNew)
+        .Merge
+        .Value = "New"
+        .Font.Size = 11
+        .Font.Bold = True
+        .Interior.Color = fillColor
+        .HorizontalAlignment = xlCenter
+    End With
+End Sub
+
+Sub InsertPivot(ws As Worksheet, sourceSheetName As String, targetCell As Range, filterSheetMatch As String)
+    Dim pc As PivotCache
+    Dim pt As PivotTable
+    Dim srcWS As Worksheet: Set srcWS = ThisWorkbook.Sheets(sourceSheetName)
+
+    Dim lastRow As Long, lastCol As Long
+    lastRow = srcWS.Cells(srcWS.Rows.Count, 1).End(xlUp).Row
+    lastCol = srcWS.Cells(1, srcWS.Columns.Count).End(xlToLeft).Column
+
+    Set pc = ThisWorkbook.PivotCaches.Create( _
+        SourceType:=xlDatabase, _
+        SourceData:=srcWS.Name & "!R1C1:R" & lastRow & "C" & lastCol)
+
+    Set pt = pc.CreatePivotTable(TableDestination:=ws.Cells(targetCell.Row, targetCell.Column), TableName:="Pivot_" & Replace(filterSheetMatch, " ", "_"))
+
+    With pt
+        .PivotFields("Plugin Name").Orientation = xlPageField
+        .PivotFields("Severity").Orientation = xlRowField
+        .PivotFields("Responsabil").Orientation = xlRowField
+        .PivotFields("DNS Name").Orientation = xlRowField
+        .AddDataField .PivotFields("Severity"), "Count", xlCount
+        .RowAxisLayout xlCompactRow
+        .ColumnGrand = False
+        .RowGrand = False
+        .ShowTableStyleRowStripes = True
+        .TableStyle2 = "PivotStyleLight16"
+        .ColumnHeaderCaption = ""
+        .CompactLayoutRowHeader = "Vulnerabilitati"
+        .RepeatAllLabels xlRepeatLabels
+        .PivotCache.Refresh
+        .ManualUpdate = False
+        .PivotFields("Plugin Name").EnableMultiplePageItems = True
+        .PivotFields("Plugin Name").ClearAllFilters
+        .PivotFields("Plugin Name").CurrentPage = "(All)"
+        .RowFields(1).Subtotals(1) = False
+        .RowFields(2).Subtotals(1) = False
+        .RowFields(3).Subtotals(1) = False
+        .PivotSelect "", xlDataAndLabel, True
+        .ShowDrillIndicators = False
+        .CompactLayoutColumnHeader = ""
+        .DisplayFieldCaptions = False
+        .DisplayContextTooltips = False
+        .DisplayErrorString = False
+        .DisplayNullString = False
+        .DisplayFieldList = False
+        .DisplayMemberPropertyTooltips = False
+        .DisplayImmediateWindow = False
+    End With
+
+    ws.Cells.Interior.Color = RGB(255, 255, 255) ' Reset grid artifacts
+    pt.ShowDrillIndicators = False
+    pt.RowAxisLayout xlTabularRow
+    pt.PivotCache.Refresh
+    pt.ManualUpdate = False
+    pt.PivotCache.Refresh
+    pt.ManualUpdate = True
+End Sub
