@@ -130,7 +130,7 @@ Sub ImportCSV_WithResponsabiliAndFormatting()
 
                         If InStr(rawDate, ",") > 0 Then
                             On Error Resume Next
-                            discoveredDate = DateValue(Trim(Split(rawDate, " E")(0)))(0) & " " & Split(rawDate, " ")(1) & ", " & Split(rawDate, " ")(2))
+                            discoveredDate = DateValue(Trim(Split(rawDate, " E")(0)))
                             On Error GoTo 0
 
                             Select Case sev
