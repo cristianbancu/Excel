@@ -1,0 +1,131 @@
+Sub ImportCSV_WithStyle_WrapHeader()
+
+    Dim fileNames As Variant
+    fileNames = Array("Linux Prod.csv", "Linux Test.csv", "AIX Prod&DR.csv", "AIX Test.csv", "Windows Prod.csv", "Windows Test.csv")
+
+    Dim sheetColors As Object
+    Set sheetColors = CreateObject("Scripting.Dictionary")
+    sheetColors.Add "Linux", RGB(255, 255, 0)
+    sheetColors.Add "AIX", RGB(0, 255, 0)
+    sheetColors.Add "Windows", RGB(0, 176, 240)
+
+    Dim folderPath As String
+    folderPath = ThisWorkbook.Path
+
+    ' Curățăm dacă există
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    Worksheets("All Vulns").Delete
+    Worksheets("Comparare").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+
+    Dim allSheet As Worksheet
+    Set allSheet = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+    allSheet.Name = "All Vulns"
+    allSheet.Tab.Color = RGB(204, 153, 255)
+
+    Dim allRow As Long: allRow = 2
+    Dim headerSet As Boolean: headerSet = False
+
+    Dim i As Integer
+    For i = LBound(fileNames) To UBound(fileNames)
+        Dim filePath As String
+        Dim sheetName As String
+        Dim prefix As String
+        Dim wsDest As Worksheet
+        Dim lastRow As Long, lastCol As Long
+        Dim tableName As String
+
+        sheetName = Replace(fileNames(i), ".csv", "")
+        prefix = Split(sheetName)(0)
+        filePath = folderPath & "\" & fileNames(i)
+
+        If Len(Dir(filePath)) > 0 Then
+            Set wsDest = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+            wsDest.Name = sheetName
+            If sheetColors.exists(prefix) Then wsDest.Tab.Color = sheetColors(prefix)
+
+            ' Import CSV simplu
+            Application.Workbooks.OpenText _
+                Filename:=filePath, _
+                DataType:=xlDelimited, _
+                Comma:=True, _
+                Local:=True
+
+            Dim tempWb As Workbook
+            Set tempWb = ActiveWorkbook
+            tempWb.Sheets(1).UsedRange.Copy Destination:=wsDest.Range("A1")
+            tempWb.Close False
+
+            lastRow = wsDest.Cells(wsDest.Rows.Count, 1).End(xlUp).Row
+            lastCol = wsDest.Cells(1, wsDest.Columns.Count).End(xlToLeft).Column
+            tableName = "Tbl_" & Replace(sheetName, " ", "_")
+
+            With wsDest
+                .ListObjects.Add(xlSrcRange, .Range(.Cells(1, 1), .Cells(lastRow, lastCol)), , xlYes).Name = tableName
+                With .ListObjects(tableName)
+                    .TableStyle = "TableStyleLight1"
+                    .ShowTableStyleRowStripes = False
+                    .ShowTableStyleColumnStripes = False
+                    With .HeaderRowRange
+                        .Interior.Color = RGB(0, 176, 240)
+                        .Font.Bold = True
+                    End With
+                End With
+
+                ' Dublu wrap text
+                With .Range(.Cells(1, 1), .Cells(lastRow, lastCol))
+                    .WrapText = True
+                    .WrapText = False
+                End With
+
+                .Cells.EntireColumn.AutoFit
+                .Cells.EntireRow.AutoFit
+            End With
+
+            ' Adaugă în All Vulns
+            If Not headerSet Then
+                wsDest.Range(wsDest.Cells(1, 1), wsDest.Cells(1, lastCol)).Copy Destination:=allSheet.Range("A1")
+                headerSet = True
+            End If
+            wsDest.Range(wsDest.Cells(2, 1), wsDest.Cells(lastRow, lastCol)).Copy Destination:=allSheet.Cells(allRow, 1)
+            allRow = allSheet.Cells(allSheet.Rows.Count, 1).End(xlUp).Row + 1
+        Else
+            MsgBox "Fișier lipsă: " & filePath, vbExclamation
+        End If
+    Next i
+
+    ' Format All Vulns
+    Dim lastRowAll As Long, lastColAll As Long
+    lastRowAll = allSheet.Cells(allSheet.Rows.Count, 1).End(xlUp).Row
+    lastColAll = allSheet.Cells(1, allSheet.Columns.Count).End(xlToLeft).Column
+    With allSheet
+        .ListObjects.Add(xlSrcRange, .Range(.Cells(1, 1), .Cells(lastRowAll, lastColAll)), , xlYes).Name = "Tbl_AllVulns"
+        With .ListObjects("Tbl_AllVulns")
+            .TableStyle = "TableStyleLight1"
+            .ShowTableStyleRowStripes = False
+            .ShowTableStyleColumnStripes = False
+            With .HeaderRowRange
+                .Interior.Color = RGB(0, 176, 240)
+                .Font.Bold = True
+            End With
+        End With
+
+        ' Wrap text și autofit
+        With .Range(.Cells(1, 1), .Cells(lastRowAll, lastColAll))
+            .WrapText = True
+            .WrapText = False
+        End With
+        .Cells.EntireColumn.AutoFit
+        .Cells.EntireRow.AutoFit
+    End With
+
+    ' Comparare gol
+    Dim compareSheet As Worksheet
+    Set compareSheet = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+    compareSheet.Name = "Comparare"
+
+    MsgBox "Import complet, cu header albastru și wrap text.", vbInformation
+
+End Sub
