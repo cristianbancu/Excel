@@ -1,0 +1,81 @@
+Sub ImportCSVFiles()
+
+    Dim fileNames As Variant
+    fileNames = Array("Linux Prod.csv", "Linux Test.csv", "AIX Prod&DR.csv", "AIX Test.csv", "Windows Prod.csv", "Windows Test.csv")
+    
+    Dim sheetColors As Object
+    Set sheetColors = CreateObject("Scripting.Dictionary")
+    sheetColors.Add "Linux", RGB(255, 255, 0)    ' Galben
+    sheetColors.Add "AIX", RGB(0, 255, 0)        ' Verde
+    sheetColors.Add "Windows", RGB(0, 176, 240)  ' Albastru
+    
+    Dim wbTemplate As Workbook
+    Set wbTemplate = Workbooks.Add
+
+    Dim allData As Worksheet
+    Set allData = wbTemplate.Sheets(1)
+    allData.Name = "All Vulns"
+    allData.Tab.Color = RGB(204, 153, 255)
+
+    Dim allRow As Long: allRow = 2
+    Dim headerSet As Boolean: headerSet = False
+
+    Dim i As Integer
+    For i = LBound(fileNames) To UBound(fileNames)
+        Dim filePath As String
+        Dim sheetName As String
+        Dim prefix As String
+        Dim csvData As Workbook
+        Dim wsSource As Worksheet
+        Dim wsDest As Worksheet
+
+        sheetName = Replace(fileNames(i), ".csv", "")
+        prefix = Split(sheetName)(0)
+
+        filePath = ThisWorkbook.Path & "\" & fileNames(i)
+        If Dir(filePath) <> "" Then
+            Set csvData = Workbooks.Open(filePath)
+            Set wsSource = csvData.Sheets(1)
+            
+            Set wsDest = wbTemplate.Sheets.Add(After:=wbTemplate.Sheets(wbTemplate.Sheets.Count))
+            wsDest.Name = sheetName
+            If sheetColors.exists(prefix) Then
+                wsDest.Tab.Color = sheetColors(prefix)
+            End If
+            
+            wsSource.UsedRange.Copy Destination:=wsDest.Range("A1")
+            csvData.Close False
+            
+            With wsDest
+                .Rows(1).Font.Bold = True
+                .Rows(1).Interior.Color = RGB(0, 176, 240)
+                .Rows(1).AutoFilter
+            End With
+            
+            Dim lastRow As Long
+            lastRow = wsDest.Cells(wsDest.Rows.Count, 1).End(xlUp).Row
+            If Not headerSet Then
+                wsDest.Rows(1).Copy Destination:=allData.Rows(1)
+                headerSet = True
+            End If
+            wsDest.Range("A2:A" & lastRow).EntireRow.Copy Destination:=allData.Cells(allRow, 1)
+            allRow = allData.Cells(allData.Rows.Count, 1).End(xlUp).Row + 1
+        Else
+            MsgBox "Fișierul lipsă: " & fileNames(i), vbExclamation
+        End If
+    Next i
+
+    With allData
+        .Rows(1).Font.Bold = True
+        .Rows(1).Interior.Color = RGB(0, 176, 240)
+        .Rows(1).AutoFilter
+    End With
+
+    ' Comparare sheet gol
+    Dim compareSheet As Worksheet
+    Set compareSheet = wbTemplate.Sheets.Add(After:=wbTemplate.Sheets(wbTemplate.Sheets.Count))
+    compareSheet.Name = "Comparare"
+
+    MsgBox "Import CSV complet!", vbInformation
+
+End Sub
