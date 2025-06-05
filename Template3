@@ -1,0 +1,93 @@
+Sub ImportCSVFilesWithTables()
+
+    Dim fileNames As Variant
+    fileNames = Array("Linux Prod.csv", "Linux Test.csv", "AIX Prod&DR.csv", "AIX Test.csv", "Windows Prod.csv", "Windows Test.csv")
+    
+    Dim sheetColors As Object
+    Set sheetColors = CreateObject("Scripting.Dictionary")
+    sheetColors.Add "Linux", RGB(255, 255, 0)    ' Galben
+    sheetColors.Add "AIX", RGB(0, 255, 0)        ' Verde
+    sheetColors.Add "Windows", RGB(0, 176, 240)  ' Albastru
+    
+    Dim wbTemplate As Workbook
+    Set wbTemplate = Workbooks.Add
+
+    Dim allData As Worksheet
+    Set allData = wbTemplate.Sheets(1)
+    allData.Name = "All Vulns"
+    allData.Tab.Color = RGB(204, 153, 255)
+
+    Dim allRow As Long: allRow = 2
+    Dim headerSet As Boolean: headerSet = False
+    Dim mergedData As Variant
+    Dim masterData As Object: Set masterData = CreateObject("Scripting.Dictionary")
+    Dim tableIndex As Integer: tableIndex = 1
+
+    Dim i As Integer
+    For i = LBound(fileNames) To UBound(fileNames)
+        Dim filePath As String
+        Dim sheetName As String
+        Dim prefix As String
+        Dim csvData As Workbook
+        Dim wsSource As Worksheet
+        Dim wsDest As Worksheet
+        Dim lastRow As Long, lastCol As Long
+        Dim tableName As String
+
+        sheetName = Replace(fileNames(i), ".csv", "")
+        prefix = Split(sheetName)(0)
+
+        filePath = ThisWorkbook.Path & "\" & fileNames(i)
+        If Dir(filePath) <> "" Then
+            Set csvData = Workbooks.Open(filePath)
+            Set wsSource = csvData.Sheets(1)
+
+            Set wsDest = wbTemplate.Sheets.Add(After:=wbTemplate.Sheets(wbTemplate.Sheets.Count))
+            wsDest.Name = sheetName
+            If sheetColors.exists(prefix) Then wsDest.Tab.Color = sheetColors(prefix)
+
+            wsSource.UsedRange.Copy Destination:=wsDest.Range("A1")
+            csvData.Close False
+
+            lastRow = wsDest.Cells(wsDest.Rows.Count, 1).End(xlUp).Row
+            lastCol = wsDest.Cells(1, wsDest.Columns.Count).End(xlToLeft).Column
+
+            ' Format as Table
+            tableName = "Tbl_" & Replace(sheetName, " ", "_")
+            With wsDest
+                .ListObjects.Add(xlSrcRange, .Range(.Cells(1, 1), .Cells(lastRow, lastCol)), , xlYes).Name = tableName
+                .ListObjects(tableName).TableStyle = "TableStyleMedium9"
+            End With
+
+            ' Adăugare în All Vulns
+            If Not headerSet Then
+                wsDest.Range(wsDest.Cells(1, 1), wsDest.Cells(1, lastCol)).Copy Destination:=allData.Range("A1")
+                headerSet = True
+            End If
+            wsDest.Range(wsDest.Cells(2, 1), wsDest.Cells(lastRow, lastCol)).Copy _
+                Destination:=allData.Cells(allRow, 1)
+            allRow = allData.Cells(allData.Rows.Count, 1).End(xlUp).Row + 1
+
+        Else
+            MsgBox "Fișierul lipsă: " & fileNames(i), vbExclamation
+        End If
+    Next i
+
+    ' Format "All Vulns" ca tabel
+    Dim lastRowAll As Long, lastColAll As Long
+    lastRowAll = allData.Cells(allData.Rows.Count, 1).End(xlUp).Row
+    lastColAll = allData.Cells(1, allData.Columns.Count).End(xlToLeft).Column
+
+    With allData
+        .ListObjects.Add(xlSrcRange, .Range(.Cells(1, 1), .Cells(lastRowAll, lastColAll)), , xlYes).Name = "Tbl_AllVulns"
+        .ListObjects("Tbl_AllVulns").TableStyle = "TableStyleMedium9"
+    End With
+
+    ' Sheet Comparare (gol)
+    Dim compareSheet As Worksheet
+    Set compareSheet = wbTemplate.Sheets.Add(After:=wbTemplate.Sheets(wbTemplate.Sheets.Count))
+    compareSheet.Name = "Comparare"
+
+    MsgBox "Import finalizat cu succes!", vbInformation
+
+End Sub
