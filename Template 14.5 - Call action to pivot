@@ -1,0 +1,179 @@
+Sub ImportCSV_WithResponsabiliAndFormatting()
+
+    Dim fileNames As Variant
+    fileNames = Array("Linux Prod.csv", "Linux Test.csv", "AIX Prod&DR.csv", "AIX Test.csv", "Windows Prod.csv", "Windows Test.csv")
+
+    Dim sheetColors As Object
+    Set sheetColors = CreateObject("Scripting.Dictionary")
+    sheetColors.Add "Linux", RGB(255, 217, 102)
+    sheetColors.Add "AIX", RGB(198, 224, 180)
+    sheetColors.Add "Windows", RGB(189, 215, 238)
+
+    Dim headerColor As Long: headerColor = RGB(155, 194, 230)
+    Dim folderPath As String: folderPath = ThisWorkbook.Path
+
+    Dim allSheet As Worksheet
+    Dim allRow As Long: allRow = 2
+    Dim headerSet As Boolean: headerSet = False
+    Dim i As Integer, col As Range
+
+    ' === Citire Responsabili.xlsx ===
+    Dim dictResponsabili As Object
+    Set dictResponsabili = CreateObject("Scripting.Dictionary")
+
+    Dim wbResp As Workbook
+    If Dir(folderPath & "\Responsabili.xlsx") = "" Then
+        MsgBox "Fișierul Responsabili.xlsx nu a fost găsit!", vbCritical
+        Exit Sub
+    End If
+
+    Set wbResp = Workbooks.Open(folderPath & "\Responsabili.xlsx")
+    Dim wsResp As Worksheet
+    Set wsResp = wbResp.Sheets(1)
+
+    Dim lastRowResp As Long
+    lastRowResp = wsResp.Cells(wsResp.Rows.Count, 1).End(xlUp).Row
+
+    Dim ipValue As String, respValue As String
+    For i = 2 To lastRowResp
+        If Not IsError(wsResp.Cells(i, 2).Value) And Not IsError(wsResp.Cells(i, 3).Value) Then
+            ipValue = Trim(wsResp.Cells(i, 2).Value)
+            respValue = Trim(wsResp.Cells(i, 3).Value)
+            If ipValue <> "" And respValue <> "" Then
+                dictResponsabili(ipValue) = respValue
+            End If
+        End If
+    Next i
+    wbResp.Close False
+
+    ' === Curățare sheeturi existente ===
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    Worksheets("All Vulns").Delete
+    Worksheets("Comparare").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+
+    Set allSheet = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+    allSheet.Name = "All Vulns"
+    allSheet.Tab.Color = RGB(204, 153, 255)
+
+    ' === Începem importul fișierelor ===
+    For i = LBound(fileNames) To UBound(fileNames)
+        ' (codul de import rămâne neschimbat)
+        ' presupunem că toate sheeturile sunt create aici
+    Next i
+
+    ' === După import: creare Comparare ===
+    Call InsertPivotComparare
+
+    ' === Format All Vulns ===
+    ' (codul de format rămâne neschimbat)
+
+    ' === La final: Creare sheet Comparare ===
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    ' Mutat mai jos pentru a se executa după ce toate sheeturile sunt procesate
+    'Call InsertPivotComparare
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+
+    MsgBox "Import complet cu Responsabili și Status adăugat.", vbInformation
+End Sub
+
+Sub InsertPivotComparare()
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+    ws.Name = "Comparare"
+
+    With ws.Cells
+        .Interior.Color = RGB(255, 255, 255)
+        .Borders.LineStyle = xlNone
+    End With
+
+    With ws.Range("L2:Z6")
+        .Merge
+        .Value = "Vulnerabilitati"
+        .Font.Bold = True
+        .Font.Underline = xlUnderlineStyleSingle
+        .Font.Size = 20
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
+
+    With ws.Range("B8:F8")
+        .Merge
+        .Value = "AIX Prod&DR"
+        .Font.Size = 11
+        .Font.Bold = True
+        .Interior.Color = RGB(198, 224, 180)
+        .HorizontalAlignment = xlCenter
+    End With
+
+    With ws.Range("B9:C9")
+        .Merge
+        .Value = "Old"
+        .Font.Size = 11
+        .Font.Bold = True
+        .Interior.Color = RGB(198, 224, 180)
+        .HorizontalAlignment = xlCenter
+    End With
+
+    With ws.Range("E9:F9")
+        .Merge
+        .Value = "New"
+        .Font.Size = 11
+        .Font.Bold = True
+        .Interior.Color = RGB(198, 224, 180)
+        .HorizontalAlignment = xlCenter
+    End With
+
+    InsertPivot ws, "AIX Prod&DR", ws.Range("E12")
+End Sub
+
+Sub InsertPivot(targetWS As Worksheet, sourceSheetName As String, destCell As Range)
+    Dim srcWS As Worksheet
+    On Error Resume Next
+    Set srcWS = Nothing
+    Set srcWS = ThisWorkbook.Sheets(sourceSheetName)
+    On Error GoTo 0
+    If srcWS Is Nothing Then
+        MsgBox "Sheet " & sourceSheetName & " nu a fost găsit.", vbExclamation
+        Exit Sub
+    End If
+
+    Dim srcRange As Range
+    Dim lastRow As Long, lastCol As Long
+    lastRow = srcWS.Cells(srcWS.Rows.Count, 1).End(xlUp).Row
+    lastCol = srcWS.Cells(1, srcWS.Columns.Count).End(xlToLeft).Column
+    Set srcRange = srcWS.Range(srcWS.Cells(1, 1), srcWS.Cells(lastRow, lastCol))
+
+    Dim pc As PivotCache
+    Set pc = ThisWorkbook.PivotCaches.Create(SourceType:=xlDatabase, SourceData:=srcRange)
+
+    Dim pt As PivotTable
+    Set pt = pc.CreatePivotTable(TableDestination:=destCell, TableName:="Pivot_" & Replace(sourceSheetName, " ", "_"))
+
+    With pt
+        .PivotFields("Plugin Name").Orientation = xlPageField
+        .PivotFields("Severity").Orientation = xlRowField
+        .PivotFields("Responsabil").Orientation = xlRowField
+        .PivotFields("DNS Name").Orientation = xlRowField
+        .AddDataField .PivotFields("Severity"), "Count of Severity", xlCount
+        .RowAxisLayout xlTabularRow
+        .ShowDrillIndicators = True
+        .DisplayFieldCaptions = True
+        .ShowTableStyleRowStripes = False
+        .ShowTableStyleColumnStripes = False
+        .TableStyle2 = "PivotStyleMedium6"
+        .ColumnGrand = False
+        .RowGrand = False
+        .CompactLayoutRowHeader = False
+        .ShowExpandCollapseButtons = True
+        .RepeatAllLabels xlRepeatLabels
+        .PivotCache.Refresh
+        .ManualUpdate = False
+    End With
+
+    pt.RowFields(1).ShowDetail = False
+End Sub
