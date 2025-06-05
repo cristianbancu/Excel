@@ -1,0 +1,225 @@
+Sub ImportCSV_WithResponsabiliAndFormatting()
+
+    Dim fileNames As Variant
+    fileNames = Array("Linux Prod.csv", "Linux Test.csv", "AIX Prod&DR.csv", "AIX Test.csv", "Windows Prod.csv", "Windows Test.csv")
+
+    Dim sheetColors As Object
+    Set sheetColors = CreateObject("Scripting.Dictionary")
+    sheetColors.Add "Linux", RGB(255, 217, 102)
+    sheetColors.Add "AIX", RGB(198, 224, 180)
+    sheetColors.Add "Windows", RGB(189, 215, 238)
+
+    Dim headerColor As Long: headerColor = RGB(155, 194, 230)
+    Dim folderPath As String: folderPath = ThisWorkbook.Path
+
+    Dim allSheet As Worksheet
+    Dim allRow As Long: allRow = 2
+    Dim headerSet As Boolean: headerSet = False
+    Dim i As Integer, col As Range
+
+    ' === Citire Responsabili.xlsx ===
+    Dim dictResponsabili As Object
+    Set dictResponsabili = CreateObject("Scripting.Dictionary")
+
+    Dim wbResp As Workbook
+    If Dir(folderPath & "\Responsabili.xlsx") = "" Then
+        MsgBox "Fișierul Responsabili.xlsx nu a fost găsit!", vbCritical
+        Exit Sub
+    End If
+
+    Set wbResp = Workbooks.Open(folderPath & "\Responsabili.xlsx")
+    Dim wsResp As Worksheet
+    Set wsResp = wbResp.Sheets(1)
+
+    Dim lastRowResp As Long
+    lastRowResp = wsResp.Cells(wsResp.Rows.Count, 1).End(xlUp).Row
+
+    Dim ipValue As String, respValue As String
+    For i = 2 To lastRowResp
+        If Not IsError(wsResp.Cells(i, 2).Value) And Not IsError(wsResp.Cells(i, 3).Value) Then
+            ipValue = Trim(wsResp.Cells(i, 2).Value)
+            respValue = Trim(wsResp.Cells(i, 3).Value)
+            If ipValue <> "" And respValue <> "" Then
+                dictResponsabili(ipValue) = respValue
+            End If
+        End If
+    Next i
+    wbResp.Close False
+
+    ' === Curățare sheeturi existente ===
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    Worksheets("All Vulns").Delete
+    Worksheets("Comparare").Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+
+    Set allSheet = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+    allSheet.Name = "All Vulns"
+    allSheet.Tab.Color = RGB(204, 153, 255)
+
+    ' === Începem importul fișierelor ===
+    For i = LBound(fileNames) To UBound(fileNames)
+        Dim filePath As String
+        Dim sheetName As String
+        Dim prefix As String
+        Dim wsDest As Worksheet
+        Dim lastRow As Long, lastCol As Long
+        Dim tableName As String
+
+        sheetName = Replace(fileNames(i), ".csv", "")
+        prefix = Split(sheetName)(0)
+        filePath = folderPath & "\" & fileNames(i)
+
+        If Len(Dir(filePath)) > 0 Then
+            Set wsDest = ThisWorkbook.Sheets.Add(After:=Sheets(Sheets.Count))
+            wsDest.Name = sheetName
+            If sheetColors.exists(prefix) Then wsDest.Tab.Color = sheetColors(prefix)
+
+            Application.Workbooks.OpenText _
+                Filename:=filePath, _
+                DataType:=xlDelimited, _
+                Comma:=True, _
+                Local:=True
+
+            Dim tempWb As Workbook
+            Set tempWb = ActiveWorkbook
+            tempWb.Sheets(1).UsedRange.Copy Destination:=wsDest.Range("A1")
+            tempWb.Close False
+
+            lastRow = wsDest.Cells(wsDest.Rows.Count, 1).End(xlUp).Row
+            lastCol = wsDest.Cells(1, wsDest.Columns.Count).End(xlToLeft).Column
+            tableName = "Tbl_" & Replace(sheetName, " ", "_")
+
+            With wsDest
+                Dim dnsCol As Integer: dnsCol = FindColumn(wsDest, "DNS Name")
+                If dnsCol > 0 Then
+                    .Columns(dnsCol + 1).Insert Shift:=xlToRight
+                    .Cells(1, dnsCol + 1).Value = "Responsabil"
+                    .Cells(1, dnsCol + 1).Interior.Color = headerColor
+                    .Cells(1, dnsCol + 1).Font.Bold = True
+
+                    Dim ipCol As Integer: ipCol = FindColumn(wsDest, "IP Address")
+                    If ipCol > 0 Then
+                        Dim r As Long
+                        For r = 2 To lastRow
+                            Dim ip As String
+                            ip = Trim(.Cells(r, ipCol).Value)
+                            If dictResponsabili.exists(ip) Then
+                                .Cells(r, dnsCol + 1).Value = dictResponsabili(ip)
+                            End If
+                        Next r
+                    End If
+                End If
+
+                ' === Inserare coloană In Time / Overdue ===
+                .Columns(dnsCol + 2).Insert Shift:=xlToRight
+                .Cells(1, dnsCol + 2).Value = "In Time / Overdue"
+                .Cells(1, dnsCol + 2).Interior.Color = headerColor
+                .Cells(1, dnsCol + 2).Font.Bold = True
+
+                Dim severityCol As Integer: severityCol = FindColumn(wsDest, "Severity")
+                Dim discoveredCol As Integer: discoveredCol = FindColumn(wsDest, "First Discovered")
+
+                If severityCol > 0 And discoveredCol > 0 Then
+                    Dim discoveredDate As Date
+                    Dim statusCol As Integer: statusCol = dnsCol + 2
+                    For r = 2 To lastRow
+                        Dim sev As String: sev = LCase(Trim(.Cells(r, severityCol).Value))
+                        Dim rawDate As String: rawDate = Trim(.Cells(r, discoveredCol).Value)
+
+                        If InStr(rawDate, ",") > 0 Then
+                            On Error Resume Next
+                            discoveredDate = DateValue(Trim(Split(rawDate, " E")(0)))
+                            On Error GoTo 0
+
+                            Select Case sev
+                                Case "critical": If Date - discoveredDate > 14 Then .Cells(r, statusCol).Value = "Overdue" Else .Cells(r, statusCol).Value = "In Time"
+                                Case "high":     If Date - discoveredDate > 30 Then .Cells(r, statusCol).Value = "Overdue" Else .Cells(r, statusCol).Value = "In Time"
+                                Case "medium":   If Date - discoveredDate > 180 Then .Cells(r, statusCol).Value = "Overdue" Else .Cells(r, statusCol).Value = "In Time"
+                                Case "low":      If Date - discoveredDate > 365 Then .Cells(r, statusCol).Value = "Overdue" Else .Cells(r, statusCol).Value = "In Time"
+                            End Select
+                        End If
+                    Next r
+
+                    Dim c As Range
+                    For Each c In .Range(.Cells(2, statusCol), .Cells(lastRow, statusCol))
+                        Select Case LCase(Trim(c.Value))
+                            Case "in time": c.Interior.Color = RGB(198, 224, 180)
+                            Case "overdue": c.Interior.Color = RGB(255, 192, 0)
+                        End Select
+                    Next c
+                End If
+
+                lastCol = .Cells(1, .Columns.Count).End(xlToLeft).Column
+                .ListObjects.Add(xlSrcRange, .Range(.Cells(1, 1), .Cells(lastRow, lastCol)), , xlYes).Name = tableName
+                With .ListObjects(tableName)
+                    .TableStyle = "TableStyleLight1"
+                    .ShowTableStyleRowStripes = False
+                    .ShowTableStyleColumnStripes = False
+                    With .HeaderRowRange
+                        .Interior.Color = headerColor
+                        .Font.Bold = True
+                    End With
+                End With
+
+                With .Range(.Cells(1, 1), .Cells(lastRow, lastCol))
+                    .WrapText = True
+                    .WrapText = False
+                End With
+
+                .Cells.EntireColumn.AutoFit
+                .Cells.EntireRow.AutoFit
+
+                For Each col In .UsedRange.Columns
+                    If col.ColumnWidth > 29.22 Then col.ColumnWidth = 29.22
+                Next col
+
+                Call ColorSeverityColumn(wsDest, lastRow)
+            End With
+
+            If Not headerSet Then
+                wsDest.Range(wsDest.Cells(1, 1), wsDest.Cells(1, lastCol)).Copy Destination:=allSheet.Range("A1")
+                headerSet = True
+            End If
+            wsDest.Range(wsDest.Cells(2, 1), wsDest.Cells(lastRow, lastCol)).Copy Destination:=allSheet.Cells(allRow, 1)
+            allRow = allSheet.Cells(allSheet.Rows.Count, 1).End(xlUp).Row + 1
+        Else
+            MsgBox "Fișier lipsă: " & filePath, vbExclamation
+        End If
+    Next i
+
+    Dim lastRowAll As Long, lastColAll As Long
+    lastRowAll = allSheet.Cells(allSheet.Rows.Count, 1).End(xlUp).Row
+    lastColAll = allSheet.Cells(1, allSheet.Columns.Count).End(xlToLeft).Column
+
+    With allSheet
+        .ListObjects.Add(xlSrcRange, .Range(.Cells(1, 1), .Cells(lastRowAll, lastColAll)), , xlYes).Name = "Tbl_AllVulns"
+        With .ListObjects("Tbl_AllVulns")
+            .TableStyle = "TableStyleLight1"
+            .ShowTableStyleRowStripes = False
+            .ShowTableStyleColumnStripes = False
+            With .HeaderRowRange
+                .Interior.Color = headerColor
+                .Font.Bold = True
+            End With
+        End With
+
+        With .Range(.Cells(1, 1), .Cells(lastRowAll, lastColAll))
+            .WrapText = True
+            .WrapText = False
+        End With
+
+        .Cells.EntireColumn.AutoFit
+        .Cells.EntireRow.AutoFit
+
+        For Each col In .UsedRange.Columns
+            If col.ColumnWidth > 29.22 Then col.ColumnWidth = 29.22
+        Next col
+
+        Call ColorSeverityColumn(allSheet, lastRowAll)
+    End With
+
+    Call CreateCompareSheet
+    MsgBox "Import complet cu Responsabili și Status adăugat.", vbInformation
+End Sub
